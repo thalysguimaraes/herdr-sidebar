@@ -21,5 +21,6 @@ pub mod suggest;
 pub mod syntax;
 pub mod tree;
 pub mod ui;
+pub mod usage;
 pub mod viewer;
 pub mod wrap;
