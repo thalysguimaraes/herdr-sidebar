@@ -149,7 +149,10 @@ impl App {
         if area.width == 0 || area.height == 0 {
             return;
         }
-        let rows = self.render_rows(usize::from(area.width));
+        // One cell each side so bars don't touch the pane border; the
+        // scrollbar keeps the full-width edge.
+        let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
+        let rows = self.render_rows(usize::from(inner.width));
         let visible = usize::from(area.height);
         self.scroll = self.scroll.min(rows.len().saturating_sub(visible.max(1)));
         let total = rows.len();
@@ -158,7 +161,7 @@ impl App {
             .skip(self.scroll)
             .take(visible)
             .collect();
-        frame.render_widget(Paragraph::new(slice), area);
+        frame.render_widget(Paragraph::new(slice), inner);
         draw_scrollbar(frame, area, total, visible, self.scroll);
     }
 
