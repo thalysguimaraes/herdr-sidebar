@@ -2,7 +2,7 @@
 # Compatible with the Windows PowerShell 5.1 host used by herdr actions.
 $ErrorActionPreference = 'Stop'
 
-$Repo = 'alexarthurs/herdr-sidebar'
+$Repo = 'thalysguimaraes/herdr-sidebar'
 $TestMode = $env:HS_TEST_MODE -eq '1'
 function Remove-HsVerbatimPrefix([string]$Path) {
     if ($Path -and $Path.StartsWith('\\?\')) { return $Path.Substring(4) }

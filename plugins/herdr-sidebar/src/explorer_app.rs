@@ -26,7 +26,7 @@ use herdr_sidebar::ipc;
 use herdr_sidebar::state::{self as sidebar, View};
 use herdr_sidebar::tree::{Row, Tree};
 use herdr_sidebar::ui::{
-    TitleAction, activity_button_style, activity_icons, chrome_button_style, draw_activity_caps,
+    TitleAction, activity_button_style, activity_icons, usage_icon, chrome_button_style, draw_activity_caps,
     draw_scrollbar, gear_icon, hits, hits_activity_button, hits_collapse_button, hover_style,
     icon_style as ui_icon_style, input_tail, keep_visible_scroll, palette, selection_style,
     set_color_theme, sibling_panes_of, status_color, title_action_icon, title_action_spans,
@@ -408,6 +408,7 @@ struct ActivityZones {
     explorer: (u16, u16),
     search: (u16, u16),
     source_control: (u16, u16),
+    usage: (u16, u16),
 }
 
 impl Default for ActivityZones {
@@ -418,6 +419,7 @@ impl Default for ActivityZones {
             explorer: (0, 0),
             search: (0, 0),
             source_control: (0, 0),
+            usage: (0, 0),
         }
     }
 }
@@ -1057,7 +1059,7 @@ impl App {
             _ => None,
         };
         if let Some(c) = injected_view.or(match key.code {
-            KeyCode::Char(c @ ('1' | '2' | '3')) => Some(c),
+            KeyCode::Char(c @ ('1' | '2' | '3' | '4')) => Some(c),
             _ => None,
         }) {
             let ctrl = injected_view.is_some()
@@ -1087,6 +1089,8 @@ impl App {
                         self.open_content_search(false);
                         None
                     }
+                    '4' if self.merged() => Some(Exit::Usage),
+                    '4' => None,
                     _ => self.switch_to(View::SourceControl),
                 };
             }
@@ -1133,6 +1137,7 @@ impl App {
             KeyCode::Char('1') => return self.switch_to(View::Explorer),
             KeyCode::Char('2') => self.open_content_search(false),
             KeyCode::Char('3') => return self.switch_to(View::SourceControl),
+            KeyCode::Char('4') if self.merged() => return Some(Exit::Usage),
             _ => {}
         }
         None
@@ -1162,6 +1167,9 @@ impl App {
                 }
                 if hits_activity_button(zones.source_control, zones.row, mouse.column, mouse.row) {
                     return self.switch_to(View::SourceControl);
+                }
+                if hits_activity_button(zones.usage, zones.row, mouse.column, mouse.row) {
+                    return Some(Exit::Usage);
                 }
             }
             let gear = self.gear;
@@ -3469,6 +3477,8 @@ impl App {
             Span::raw(format!(" {search_icon}{slack} ")),
             Span::raw(" "),
             Span::raw(format!(" {git_icon}{slack} ")),
+            Span::raw(" "),
+            Span::raw(format!(" {}{slack} ", usage_icon(self.theme))),
         ];
         // Hit zones from the actual span widths (emoji vs nerd-glyph widths differ).
         let mut x = area.x;
@@ -3483,6 +3493,7 @@ impl App {
             explorer: bounds[1],
             search: bounds[3],
             source_control: bounds[5],
+            usage: bounds[7],
         };
         let hovered = |bounds| {
             self.mouse_pos
@@ -3491,9 +3502,11 @@ impl App {
         let explorer_hovered = hovered(bounds[1]);
         let search_hovered = hovered(bounds[3]);
         let git_hovered = hovered(bounds[5]);
+        let usage_hovered = hovered(bounds[7]);
         spans[1].style = activity_button_style(!search_active, explorer_hovered);
         spans[3].style = activity_button_style(search_active, search_hovered);
         spans[5].style = activity_button_style(false, git_hovered);
+        spans[7].style = activity_button_style(false, usage_hovered);
         let (chip_start, chip_end) = if search_active { bounds[3] } else { bounds[1] };
         draw_activity_caps(
             frame,
@@ -3506,6 +3519,7 @@ impl App {
             (!search_active, explorer_hovered, bounds[1]),
             (search_active, search_hovered, bounds[3]),
             (false, git_hovered, bounds[5]),
+            (false, usage_hovered, bounds[7]),
         ] {
             if !active && is_hovered {
                 draw_activity_caps(

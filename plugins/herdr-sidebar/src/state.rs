@@ -87,6 +87,10 @@ pub enum Exit {
     },
     /// Switch to Explorer and open its Quick Open picker.
     QuickOpen,
+    /// Show the Usage activity (quota meters). It is not a `View`: it has no
+    /// pane identity or launcher of its own and always lives inside the
+    /// unified sidebar, so main.rs runs it in-process and returns to `View`.
+    Usage,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

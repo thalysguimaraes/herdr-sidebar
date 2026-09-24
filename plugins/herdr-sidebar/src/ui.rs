@@ -454,6 +454,14 @@ pub fn activity_icons(theme: IconTheme) -> (&'static str, &'static str, &'static
     }
 }
 
+/// Theme-matched activity-bar icon for the Usage view (FA gauge / bar chart).
+pub fn usage_icon(theme: IconTheme) -> &'static str {
+    match theme {
+        IconTheme::Material => "\u{f0e4}",
+        IconTheme::Emoji => "📊",
+    }
+}
+
 /// Theme-matched ⚙ settings glyph.
 pub fn gear_icon(theme: IconTheme) -> &'static str {
     match theme {
@@ -558,6 +566,61 @@ pub fn title_action_spans(
         cx += w;
     }
     (spans, zones)
+}
+
+/// Column ranges of the four activity buttons plus the ⚙, from the last draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ActivityBar {
+    pub row: u16,
+    pub buttons: [(u16, u16); 4],
+    pub gear: Rect,
+}
+
+/// Draw the unified activity bar (Explorer, Search, Source Control, Usage, ⚙)
+/// into a 3-row `area` with button `active` (0..4) highlighted — the same
+/// geometry the Explorer and Source Control views draw.
+pub fn draw_activity_bar(
+    frame: &mut Frame,
+    area: Rect,
+    theme: IconTheme,
+    active: usize,
+    mouse: Option<(u16, u16)>,
+) -> ActivityBar {
+    let (outer_top, outer_bottom) = (area.y, area.y + 2);
+    let area = Rect::new(area.x, area.y + 1, area.width, 1);
+    let (exp, search, git) = activity_icons(theme);
+    let slack = if theme == IconTheme::Material { " " } else { "" };
+    let mut spans: Vec<Span> = Vec::new();
+    let mut bar = ActivityBar { row: area.y, ..Default::default() };
+    let mut x = area.x;
+    for (i, icon) in [exp, search, git, usage_icon(theme)].into_iter().enumerate() {
+        spans.push(Span::raw(" "));
+        x += 1;
+        let chip = Span::raw(format!(" {icon}{slack} "));
+        let w = chip.width() as u16;
+        bar.buttons[i] = (x, x + w);
+        x += w;
+        let hovered = mouse.is_some_and(|(mx, my)| hits_activity_button(bar.buttons[i], area.y, mx, my));
+        if i == active || hovered {
+            let bg = if i == active { palette().selection_bg } else { palette().activity_hover_bg };
+            draw_activity_caps(frame, bar.buttons[i], outer_top, outer_bottom, bg);
+        }
+        spans.push(chip.style(activity_button_style(i == active, hovered)));
+    }
+    let gear_text = format!(" {} ", gear_icon(theme));
+    let gear_w = Span::raw(gear_text.as_str()).width() as u16;
+    let gear_x = area.x + area.width.saturating_sub(gear_w);
+    bar.gear = Rect::new(gear_x, outer_top, gear_w, 3);
+    let gear_hovered = mouse.is_some_and(|(mx, my)| hits(bar.gear, mx, my));
+    if gear_hovered {
+        draw_activity_caps(frame, (gear_x, gear_x + gear_w), outer_top, outer_bottom, palette().activity_hover_bg);
+    }
+    let pad = usize::from(area.width)
+        .saturating_sub(spans.iter().map(Span::width).sum::<usize>() + usize::from(gear_w));
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled(gear_text, activity_button_style(false, gear_hovered)));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    bar
 }
 
 pub fn within(x: u16, (start, end): (u16, u16)) -> bool {

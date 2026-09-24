@@ -9,6 +9,7 @@
 
 mod explorer_app;
 mod scm_app;
+mod usage_app;
 
 use std::cell::RefCell;
 use std::io::Read;
@@ -288,12 +289,135 @@ fn main() -> std::io::Result<()> {
                 view = View::Explorer;
                 quick_open_on_open = true;
             }
+            // Usage is an activity, not a View: run it here, then resume the
+            // view the user picked from its activity bar.
+            Ok(Exit::Usage) => match run_usage(&mut terminal) {
+                Ok(UsageExit::Quit) => break Ok(()),
+                Ok(UsageExit::To(next)) => view = next,
+                Ok(UsageExit::Search) => {
+                    view = View::Explorer;
+                    search_on_open = Some(false);
+                }
+                Err(e) => break Err(e),
+            },
             Err(e) => break Err(e),
         }
     };
     let _ = crossterm::execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     result
+}
+
+enum UsageExit {
+    Quit,
+    To(View),
+    Search,
+}
+
+/// The Usage activity's event loop: shared activity bar on top, quota meters
+/// below. It keeps the pane's merged identity alive (launchers treat a stale
+/// heartbeat as a dead pane) because it replaces the Explorer loop that
+/// normally stamps it.
+fn run_usage(terminal: &mut ratatui::DefaultTerminal) -> std::io::Result<UsageExit> {
+    use crossterm::event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind};
+    use herdr_sidebar::ui::{ActivityBar, draw_activity_bar, hits, hits_activity_button};
+    use ratatui::layout::{Constraint, Layout};
+
+    let pane_id = std::env::var("HERDR_PANE_ID").ok().filter(|id| !id.is_empty());
+    let theme = herdr_sidebar::icons::IconTheme::resolve(
+        std::env::var("HERDR_SIDEBAR_ICONS")
+            .or_else(|_| std::env::var("HERDR_AA_FILETREE_ICONS"))
+            .ok()
+            .as_deref(),
+        state::load_state().icons,
+    );
+    let mut app = usage_app::App::new();
+    let mut bar = ActivityBar::default();
+    let mut mouse = None;
+    let mut last_beat: Option<std::time::Instant> = None;
+    loop {
+        if last_beat.is_none_or(|t| t.elapsed() >= Duration::from_secs(5)) {
+            if let Some(id) = &pane_id {
+                herdr_sidebar::ipc::report_identity(id, View::Explorer, true);
+            }
+            last_beat = Some(std::time::Instant::now());
+        }
+        app.tick();
+        terminal.draw(|frame| {
+            let [top, body] =
+                Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(frame.area());
+            bar = draw_activity_bar(frame, top, theme, 3, mouse);
+            app.draw_body(frame, body);
+        })?;
+        if !event::poll(Duration::from_millis(500))? {
+            continue;
+        }
+        let pick = |i: usize| match i {
+            0 => Some(UsageExit::To(View::Explorer)),
+            1 => Some(UsageExit::Search),
+            2 => Some(UsageExit::To(View::SourceControl)),
+            _ => None,
+        };
+        match event::read()? {
+            Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
+                let digit = match key.code {
+                    KeyCode::F(9) => Some(0),
+                    KeyCode::F(10) => Some(1),
+                    KeyCode::F(11) => Some(2),
+                    KeyCode::Char(c @ '1'..='3')
+                        if !key.modifiers.contains(KeyModifiers::ALT) =>
+                    {
+                        Some(c as usize - '1' as usize)
+                    }
+                    _ => None,
+                };
+                if let Some(exit) = digit.and_then(pick) {
+                    persist_active(&exit);
+                    return Ok(exit);
+                }
+                if key.code == KeyCode::Char('q') {
+                    if let Some(id) = &pane_id {
+                        herdr_sidebar::ipc::clear_identity(id);
+                    }
+                    return Ok(UsageExit::Quit);
+                }
+                app.on_key(key);
+            }
+            Event::Mouse(m) => {
+                mouse = Some((m.column, m.row));
+                match m.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        let hit = (0..3).find(|&i| hits_activity_button(bar.buttons[i], bar.row, m.column, m.row));
+                        if let Some(exit) = hit.and_then(pick) {
+                            persist_active(&exit);
+                            return Ok(exit);
+                        }
+                        // ⚙ lives in the other views; send the user to Explorer's.
+                        if hits(bar.gear, m.column, m.row) {
+                            return Ok(UsageExit::To(View::Explorer));
+                        }
+                    }
+                    MouseEventKind::ScrollDown => app.on_scroll(true),
+                    MouseEventKind::ScrollUp => app.on_scroll(false),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Keep the persisted active view in step, as the views' own switch_to does.
+fn persist_active(exit: &UsageExit) {
+    let (active, search) = match exit {
+        UsageExit::To(v) => (*v, false),
+        UsageExit::Search => (View::Explorer, true),
+        UsageExit::Quit => return,
+    };
+    state::update_state(|s| {
+        s.active = active;
+        s.search_active = search;
+    });
 }
 
 fn read_stdin() -> std::io::Result<String> {

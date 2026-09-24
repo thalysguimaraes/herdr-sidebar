@@ -4,7 +4,7 @@
 # to the historical source build instead of making installation less reliable.
 set -u
 
-repo="alexarthurs/herdr-sidebar"
+repo="thalysguimaraes/herdr-sidebar"
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 test_mode=${HS_TEST_MODE:-0}
 if [ "$test_mode" = 1 ]; then

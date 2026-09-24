@@ -31,7 +31,7 @@ use herdr_sidebar::state::Exit;
 use herdr_sidebar::state::{self as sidebar, View};
 use herdr_sidebar::suggest;
 use herdr_sidebar::ui::{
-    TitleAction, activity_button_style, activity_icons, branch_icon, chrome_button_style,
+    TitleAction, activity_button_style, activity_icons, usage_icon, branch_icon, chrome_button_style,
     draw_activity_caps, draw_scrollbar, gear_icon, hits, hits_activity_button,
     hits_collapse_button, hover_style, icon_style as ui_icon_style, keep_visible_scroll, palette,
     selection_style, set_color_theme, sibling_panes_of, sparkle_icon, status_color,
@@ -535,6 +535,7 @@ struct ClickZones {
     explorer: (u16, u16),
     search: (u16, u16),
     source_control: (u16, u16),
+    usage: (u16, u16),
     /// The ⚙ button (activity bar in unified mode, header otherwise).
     gear: Rect,
     message: Rect,
@@ -1291,7 +1292,7 @@ impl App {
             _ => None,
         };
         let keyboard_view = match key.code {
-            KeyCode::Char(c @ ('1' | '2' | '3'))
+            KeyCode::Char(c @ ('1' | '2' | '3' | '4'))
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::ALT) =>
             {
@@ -1304,6 +1305,8 @@ impl App {
             return match c {
                 '1' => self.switch_to(View::Explorer),
                 '2' => self.open_search(false),
+                '4' if self.merged() => Some(Exit::Usage),
+                '4' => None,
                 _ => self.switch_to(View::SourceControl),
             };
         }
@@ -1412,6 +1415,7 @@ impl App {
             KeyCode::Char('1') => return self.switch_to(View::Explorer),
             KeyCode::Char('2') => return self.open_search(false),
             KeyCode::Char('3') => return self.switch_to(View::SourceControl),
+            KeyCode::Char('4') if self.merged() => return Some(Exit::Usage),
             _ => {}
         }
         None
@@ -1462,6 +1466,9 @@ impl App {
             }
             if hits_activity_button(z.source_control, z.activity_row, x, y) {
                 return self.switch_to(View::SourceControl);
+            }
+            if hits_activity_button(z.usage, z.activity_row, x, y) {
+                return Some(Exit::Usage);
             }
         }
         if hits(z.gear, x, y) {
@@ -3417,6 +3424,8 @@ impl App {
             Span::raw(format!(" {search_icon}{slack} ")),
             Span::raw(" "),
             Span::raw(format!(" {git_icon}{slack} ")),
+            Span::raw(" "),
+            Span::raw(format!(" {}{slack} ", usage_icon(self.theme))),
         ];
         // Hit zones from the actual span widths (emoji vs nerd-glyph widths differ).
         let mut x = area.x;
@@ -3430,6 +3439,7 @@ impl App {
         self.zones.explorer = bounds[1];
         self.zones.search = bounds[3];
         self.zones.source_control = bounds[5];
+        self.zones.usage = bounds[7];
         let hovered = |bounds| {
             self.mouse_pos
                 .is_some_and(|(x, y)| hits_activity_button(bounds, area.y, x, y))
@@ -3437,9 +3447,11 @@ impl App {
         let explorer_hovered = hovered(bounds[1]);
         let search_hovered = hovered(bounds[3]);
         let git_hovered = hovered(bounds[5]);
+        let usage_hovered = hovered(bounds[7]);
         spans[1].style = activity_button_style(false, explorer_hovered);
         spans[3].style = activity_button_style(false, search_hovered);
         spans[5].style = activity_button_style(true, git_hovered);
+        spans[7].style = activity_button_style(false, usage_hovered);
         draw_activity_caps(
             frame,
             bounds[5],
@@ -3447,9 +3459,11 @@ impl App {
             outer_bottom,
             palette().selection_bg,
         );
-        for (is_hovered, button_bounds) in
-            [(explorer_hovered, bounds[1]), (search_hovered, bounds[3])]
-        {
+        for (is_hovered, button_bounds) in [
+            (explorer_hovered, bounds[1]),
+            (search_hovered, bounds[3]),
+            (usage_hovered, bounds[7]),
+        ] {
             if is_hovered {
                 draw_activity_caps(
                     frame,
