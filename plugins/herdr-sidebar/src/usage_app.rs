@@ -149,9 +149,10 @@ impl App {
         if area.width == 0 || area.height == 0 {
             return;
         }
-        // One cell each side so bars don't touch the pane border; the
+        // Two cells each side so bars breathe away from the pane border; the
         // scrollbar keeps the full-width edge.
-        let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
+        const PAD: u16 = 2;
+        let inner = Rect::new(area.x + PAD, area.y, area.width.saturating_sub(PAD * 2), area.height);
         let rows = self.render_rows(usize::from(inner.width));
         let visible = usize::from(area.height);
         self.scroll = self.scroll.min(rows.len().saturating_sub(visible.max(1)));
